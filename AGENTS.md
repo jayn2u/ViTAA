@@ -2,6 +2,69 @@
 
 Use `uv run python` to execute Python code.
 Use `uv` for dependency management (`pyproject.toml`, Python 3.11).
+Download Google Drive artifacts with `uv run gdown` (`gdown` is listed in `pyproject.toml`; run `uv sync` first).
+
+## Path policy
+
+- **Do not use symlinks** to wire lab datasets into this repository. Other machines must run the same commands without link setup.
+- **Do not hardcode machine-specific absolute paths** (for example `/data/jayn2u/...` or `/mnt/data/...`) in scripts, configs committed to git, or agent instructions. Resolve paths from environment variables at runtime.
+- Read shared dataset location from `env/.env` or the process environment, following the same `DATASET_ROOT` convention as `lab_clip`, `negative-pedestrians`, and `clip-with-vectordb`.
+
+## Environment file (`env/.env`)
+
+Create `env/.env` before each run on a new machine. Example:
+
+```bash
+# env/.env
+DATASET_ROOT="/mnt/data/lab_datasets"
+VITAA_DATA_ROOT="/mnt/data/lab_datasets/CUHK-PEDES/vitaa"
+```
+
+| Variable | Role |
+|----------|------|
+| `DATASET_ROOT` | Root directory for lab datasets (`CUHK-PEDES`, …). Raw images and `reid_raw.json` are read from here. |
+| `VITAA_DATA_ROOT` | ViTAA-only derived artifacts (`text_attribute_graph/`, `segs/`, processed `annotations/`). Default when unset: `${DATASET_ROOT}/CUHK-PEDES/vitaa`. |
+
+Load before preprocessing, training, or evaluation:
+
+```bash
+set -a
+source env/.env
+set +a
+```
+
+### Resolving `DATASET_ROOT`
+
+Prefer `DATASET_ROOT` from `env/.env` or the process environment. When unset, code may probe known lab roots only as a last resort:
+
+```python
+from pathlib import Path
+import os
+
+def resolve_dataset_root() -> Path:
+    if root := os.environ.get("DATASET_ROOT"):
+        return Path(root)
+    for candidate in ("/mnt/data/lab_datasets", "/data/jayn2u/lab_datasets"):
+        if Path(candidate).is_dir():
+            return Path(candidate)
+    raise FileNotFoundError("Set DATASET_ROOT in env/.env or the process environment.")
+```
+
+Agents adding or changing loaders and preprocessing must use this pattern instead of baking in a single host path.
+
+### Resolved paths (CUHK-PEDES)
+
+After loading `env/.env`:
+
+| Purpose | Resolved path |
+|---------|---------------|
+| Images | `${DATASET_ROOT}/CUHK-PEDES/imgs/` |
+| Raw annotation | `${DATASET_ROOT}/CUHK-PEDES/reid_raw.json` |
+| Attribute phrases | `${VITAA_DATA_ROOT}/text_attribute_graph/` |
+| Segmentation masks | `${VITAA_DATA_ROOT}/segs/` |
+| Processed splits | `${VITAA_DATA_ROOT}/annotations/{train,val,test}.json` |
+
+Do **not** use `reid_raw_diverse_color.json`, `reid_raw_negative_*.json`, or other extended variants. They are not paired with the official `text_attribute_graph` release.
 
 ## Project role
 
@@ -11,82 +74,104 @@ Supported dataset in code: **CUHK-PEDES only** (`paths_catalog.py`). ICFG-PEDES 
 
 There is **no publicly released ViTAA checkpoint**. Paper numbers must be reproduced by completing preprocessing and training locally. ResNet-50 ImageNet weights download automatically when `MODEL.WEIGHT: imagenet`.
 
-## Dataset location
-
-Lab CUHK-PEDES raw files live at one of:
-
-- `/mnt/data/lab_datasets/CUHK-PEDES`
-- `/data/jayn2u/lab_datasets/CUHK-PEDES`
-
-These paths refer to the same storage. Use whichever exists on the current machine.
-
-Raw layout used by ViTAA preprocessing:
-
-```
-{lab_datasets_root}/CUHK-PEDES/
-├── imgs/
-└── reid_raw.json
-```
-
-Do **not** use `reid_raw_diverse_color.json`, `reid_raw_negative_*.json`, or other extended variants for ViTAA. They are not paired with the official `text_attribute_graph` release.
-
 ## Prerequisites (readiness checklist)
 
 Before training or evaluation, verify every item below.
 
-| # | Artifact | Required | Lab status (typical) | Notes |
-|---|----------|----------|----------------------|-------|
-| 1 | `datasets/cuhkpedes/imgs/` | Yes | Link from lab_datasets | Symlink to `{lab_datasets}/CUHK-PEDES/imgs` |
-| 2 | `datasets/cuhkpedes/annotations/reid_raw.json` | Yes | Link from lab_datasets | `convert_to_json.py` reads `datadir/annotations/reid_raw.json`, not the dataset root |
-| 3 | `datasets/cuhkpedes/text_attribute_graph/` | Yes | **Missing — download** | Official release only; one JSON per image caption |
-| 4 | `datasets/cuhkpedes/segs/` | Yes | **Missing — generate** | Human Parsing Network output; same relative paths as `imgs/` |
-| 5 | `datasets/cuhkpedes/annotations/train.json` | Yes | Created by convert | Plus `val.json`, `test.json` |
-| 6 | ViTAA checkpoint (`epoch_*.pth`) | Eval only | **Missing — train** | Saved under `output/cuhkpedes/` |
-| 7 | `uv sync` | Yes | Run once per machine | Optional: `uv sync --group tensorboard` for `--use-tensorboard` |
+| # | Artifact | Required | Resolved from |
+|---|----------|----------|---------------|
+| 1 | CUHK-PEDES images | Yes | `${DATASET_ROOT}/CUHK-PEDES/imgs/` |
+| 2 | `reid_raw.json` | Yes | `${DATASET_ROOT}/CUHK-PEDES/reid_raw.json` |
+| 3 | `text_attribute_graph/` | Yes | `${VITAA_DATA_ROOT}/text_attribute_graph/` (download) |
+| 4 | `segs/` | Yes | `${VITAA_DATA_ROOT}/segs/` (Human Parsing Network) |
+| 5 | `train.json`, `val.json`, `test.json` | Yes | `${VITAA_DATA_ROOT}/annotations/` (`convert_to_json`) |
+| 6 | ViTAA checkpoint (`epoch_*.pth`) | Eval only | `output/cuhkpedes/` (training output) |
+| 7 | `uv sync` | Yes | Once per machine |
 
 Training or testing without `text_attribute_graph`, `segs`, or converted JSON will fail at data load time.
 
 ## Target directory layout
 
-All ViTAA-specific artifacts live under the project tree:
+Raw CUHK-PEDES stays under `DATASET_ROOT`. ViTAA-specific files stay under `VITAA_DATA_ROOT` (default `${DATASET_ROOT}/CUHK-PEDES/vitaa`):
 
 ```
+${DATASET_ROOT}/CUHK-PEDES/
+├── imgs/
+├── reid_raw.json
+└── vitaa/
+    ├── annotations/
+    │   ├── train.json
+    │   ├── val.json
+    │   └── test.json
+    ├── segs/
+    └── text_attribute_graph/
+
 ViTAA/
-├── datasets/cuhkpedes/
-│   ├── annotations/
-│   │   ├── reid_raw.json      # symlink to lab_datasets
-│   │   ├── train.json         # convert_to_json output
-│   │   ├── val.json
-│   │   └── test.json
-│   ├── imgs/                  # symlink to lab_datasets
-│   ├── segs/                  # Human Parsing Network PNG masks
-│   └── text_attribute_graph/  # downloaded attribute phrase JSONs
 ├── configs/cuhkpedes/bilstm_r50_seg.yaml
-├── output/cuhkpedes/          # checkpoints (created by training)
+├── env/.env
+├── output/cuhkpedes/
 └── tools/
 ```
 
-### Symlink example
+## One-shot prerequisite runner
+
+From the project root, after `env/.env` is set:
 
 ```bash
-cd /data/jayn2u/ViTAA
-mkdir -p datasets/cuhkpedes/annotations
-
-ln -sfn /data/jayn2u/lab_datasets/CUHK-PEDES/imgs datasets/cuhkpedes/imgs
-ln -sfn /data/jayn2u/lab_datasets/CUHK-PEDES/reid_raw.json \
-  datasets/cuhkpedes/annotations/reid_raw.json
+uv sync
+uv run python tools/cuhkpedes/prepare_prerequisites.py
 ```
 
-Use `/mnt/data/lab_datasets` when that path exists instead of `/data/jayn2u/lab_datasets`.
+This validates `${DATASET_ROOT}/CUHK-PEDES`, downloads and extracts `text_attribute_graph` with `uv run gdown`, and runs `convert_to_json.py`. It warns when `segs/` is still missing. Use `--require-segs` to fail instead of warn.
 
-## text_attribute_graph
+`segs/` must be generated separately with Human-Parsing-Network (see below).
 
-Download from the official ViTAA README links:
+## Downloads (gdown)
 
-- [Google Drive](https://drive.google.com/file/d/1Sqm3V97hbqK9GxIwshZejJWLARfu5o1s/view?usp=sharing)
-- [Baidu Yun (code: vbss)](https://pan.baidu.com/s/1TIX4lbvZmGwbBNHcRyA1ng)
+Official Google Drive releases used by ViTAA preprocessing. Baidu mirrors are listed in the upstream README when Drive is unavailable.
 
-Extract into `datasets/cuhkpedes/text_attribute_graph/`.
+| Artifact | Google Drive ID | Local path |
+|----------|-----------------|------------|
+| `text_attribute_graph` archive | `1Sqm3V97hbqK9GxIwshZejJWLARfu5o1s` | `${VITAA_DATA_ROOT}/text_attribute_graph/` |
+| Human Parsing Network weight | `1CYhS5AXMnMtcv9MVq5luHLrZciAwhfqn` | `{Human-Parsing-Network}/pretrained_models/` (separate repo) |
+
+### text_attribute_graph
+
+```bash
+set -a
+source env/.env
+set +a
+
+uv sync
+mkdir -p "${VITAA_DATA_ROOT}"
+
+uv run gdown 1Sqm3V97hbqK9GxIwshZejJWLARfu5o1s \
+  -O "${VITAA_DATA_ROOT}/text_attribute_graph.zip"
+unzip "${VITAA_DATA_ROOT}/text_attribute_graph.zip" -d "${VITAA_DATA_ROOT}/"
+```
+
+Or run the full prerequisite chain (download, extract, `convert_to_json`):
+
+```bash
+uv run python tools/cuhkpedes/prepare_prerequisites.py
+```
+
+After extraction, JSON files must sit directly under `${VITAA_DATA_ROOT}/text_attribute_graph/` (for example `CUHK01-0363004-0.json`). If the archive unpacks into a nested folder, move that folder to `text_attribute_graph/`. Do not replace this with a symlink.
+
+Baidu fallback: [link (code: vbss)](https://pan.baidu.com/s/1TIX4lbvZmGwbBNHcRyA1ng).
+
+### Human Parsing Network weight
+
+Used in the separate [Human-Parsing-Network](https://github.com/Jarr0d/Human-Parsing-Network) repo to generate `segs/`:
+
+```bash
+mkdir -p "${HUMAN_PARSING_ROOT}/pretrained_models"
+
+uv run gdown 1CYhS5AXMnMtcv9MVq5luHLrZciAwhfqn \
+  -O "${HUMAN_PARSING_ROOT}/pretrained_models/"
+```
+
+Set `HUMAN_PARSING_ROOT` to the clone location of Human-Parsing-Network on the current machine.
 
 Naming convention (`tools/cuhkpedes/convert_to_json.py`):
 
@@ -99,42 +184,50 @@ Each file holds parsed attribute phrases mapped to five body regions: `head`, `u
 
 Segmentation maps are required at load time (`vitaa/data/datasets/cuhkpedes.py`):
 
-- Image: `datasets/cuhkpedes/imgs/{file_path}`
-- Seg: `datasets/cuhkpedes/segs/{file_path without extension}.png`
+- Image: `${DATASET_ROOT}/CUHK-PEDES/imgs/{file_path}`
+- Seg: `${VITAA_DATA_ROOT}/segs/{file_path without extension}.png`
 
 Example: `imgs/CUHK01/0363004.png` → `segs/CUHK01/0363004.png`
 
 Generate with [Jarr0d/Human-Parsing-Network](https://github.com/Jarr0d/Human-Parsing-Network):
 
-1. Clone the parsing repo (separate from ViTAA).
-2. Download the pretrained parsing weight into `pretrained_models/`:
-   - [Google Drive](https://drive.google.com/file/d/1CYhS5AXMnMtcv9MVq5luHLrZciAwhfqn/view?usp=sharing)
-3. Run inference on CUHK-PEDES images via configs under `experiments/`.
-4. Copy or symlink PNG outputs into `ViTAA/datasets/cuhkpedes/segs/` preserving the same relative paths as `imgs/`.
+1. Clone the parsing repo (separate from ViTAA); set `HUMAN_PARSING_ROOT` to its path.
+2. Download the pretrained parsing weight (see **Downloads (gdown)** → Human Parsing Network weight).
+3. Run inference on `${DATASET_ROOT}/CUHK-PEDES/imgs` via configs under `experiments/`.
+4. Write PNG outputs under `${VITAA_DATA_ROOT}/segs/` with the same relative paths as under `imgs/`.
 
 Every annotated image needs a matching seg file. Missing segs cause `FileNotFoundError` during training or evaluation.
 
 ## Annotation conversion
 
-After `imgs/`, `annotations/reid_raw.json`, and `text_attribute_graph/` are in place:
+After `text_attribute_graph/` is in place and `reid_raw.json` is available under `DATASET_ROOT`:
 
 ```bash
-cd /data/jayn2u/ViTAA
+set -a
+source env/.env
+set +a
+
 uv sync
 
 uv run python tools/cuhkpedes/convert_to_json.py \
-  --datadir datasets/cuhkpedes \
-  --outdir datasets/cuhkpedes/annotations
+  --datadir "${VITAA_DATA_ROOT}" \
+  --outdir "${VITAA_DATA_ROOT}/annotations" \
+  --reid-raw "${DATASET_ROOT}/CUHK-PEDES/reid_raw.json"
 ```
 
 The script tokenizes captions, builds vocabulary (default `word_count_threshold=2`), writes `onehot` caption IDs and `att_onehot` per-region word IDs, and emits `train.json`, `val.json`, `test.json`.
+
+`--reid-raw` points at the shared lab annotation file; do not copy or symlink it into `VITAA_DATA_ROOT`. When wiring `paths_catalog.py` and the dataset loader, read images from `${DATASET_ROOT}/CUHK-PEDES/imgs` and segs from `${VITAA_DATA_ROOT}/segs`.
 
 Config vocabulary sizes (`NUM_CLASSES: 12003`, `VOCABULARY_SIZE: 12000` in `configs/cuhkpedes/bilstm_r50_seg.yaml`) assume this conversion output.
 
 ## Training
 
 ```bash
-cd /data/jayn2u/ViTAA
+set -a
+source env/.env
+set +a
+
 uv run python tools/train_net.py \
   --config-file configs/cuhkpedes/bilstm_r50_seg.yaml
 ```
@@ -156,6 +249,10 @@ Optional tensorboard logging requires `uv sync --group tensorboard` and `--use-t
 Entry script is `tools/test_net.py` (README mentions `tools/test.py`, which does not exist).
 
 ```bash
+set -a
+source env/.env
+set +a
+
 uv run python tools/test_net.py \
   --config-file configs/cuhkpedes/bilstm_r50_seg.yaml \
   --checkpoint-file output/cuhkpedes/epoch_80.pth
@@ -182,3 +279,5 @@ Use these as the reproduction target after full preprocessing and 80-epoch train
 3. Human Parsing Network is a **separate** repository and environment; only its PNG outputs are consumed here.
 4. Multi-GPU training code exists but upstream notes it was not tested.
 5. Extended CUHK-PEDES JSON variants under `lab_datasets` are incompatible with the official `text_attribute_graph` naming scheme.
+6. **Never symlink** `${DATASET_ROOT}` assets into `${VITAA_DATA_ROOT}` or this repository; resolve paths from `env/.env` in code and shell commands instead.
+7. When updating `paths_catalog.py`, `convert_to_json.py`, or dataset loaders, wire `DATASET_ROOT` and `VITAA_DATA_ROOT` explicitly; upstream relative `datasets/cuhkpedes/imgs` layout alone is not portable across lab machines.

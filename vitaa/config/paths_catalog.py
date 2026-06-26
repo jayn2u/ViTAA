@@ -3,73 +3,32 @@
 
 import os
 
+from vitaa.utils.paths import cuhk_pedes_paths, load_project_env
+
 
 class DatasetCatalog(object):
-    DATA_DIR = "datasets"
     DATASETS = {
-        "cuhkpedes_train": {
-            "img_dir": "cuhkpedes",
-            "ann_file": "cuhkpedes/annotations/train.json"
-        },
-        "cuhkpedes_val": {
-            "img_dir": "cuhkpedes",
-            "ann_file": "cuhkpedes/annotations/val.json"
-        },
-        "cuhkpedes_test": {
-            "img_dir": "cuhkpedes",
-            "ann_file": "cuhkpedes/annotations/test.json"
-        },
-        # "market1501_train": {
-        #     "img_dir": "market1501",
-        #     "ann_dir": "market1501/annotations"
-        # },
-        # "market1501_test": {
-        #     "img_dir": "market1501",
-        #     "ann_dir": "market1501/annotations"
-        # },
-        # "dukemtmc_train": {
-        #     "img_dir": "dukemtmc",
-        #     "ann_dir": "dukemtmc/annotations"
-        # },
-        # "dukemtmc_test": {
-        #     "img_dir": "dukemtmc",
-        #     "ann_dir": "dukemtmc/annotations"
-        # },
+        "cuhkpedes_train": "train.json",
+        "cuhkpedes_val": "val.json",
+        "cuhkpedes_test": "test.json",
     }
 
     @staticmethod
     def get(name):
         if "cuhkpedes" in name:
-            data_dir = DatasetCatalog.DATA_DIR
-            attrs = DatasetCatalog.DATASETS[name]
+            load_project_env()
+            paths = cuhk_pedes_paths()
+            split_file = DatasetCatalog.DATASETS.get(name)
+            if split_file is None:
+                raise RuntimeError("Dataset not available: {}".format(name))
             args = dict(
-                root=os.path.join(data_dir, attrs["img_dir"]),
-                ann_file=os.path.join(data_dir, attrs["ann_file"]),
+                root=str(paths["vitaa_data_root"]),
+                img_dir=str(paths["img_dir"]),
+                seg_dir=str(paths["segs_dir"]),
+                ann_file=str(paths["annotations_dir"] / split_file),
             )
             return dict(
                 factory="CUHKPEDESDataset",
                 args=args,
             )
-        # elif "market1501" in name:
-        #     data_dir = DatasetCatalog.DATA_DIR
-        #     attrs = DatasetCatalog.DATASETS[name]
-        #     args = dict(
-        #         root=os.path.join(data_dir, attrs["img_dir"]),
-        #         ann_root=os.path.join(data_dir, attrs["ann_dir"]),
-        #     )
-        #     return dict(
-        #         factory="Market1501Dataset",
-        #         args=args,
-        #     )
-        # elif "dukemtmc" in name:
-        #     data_dir = DatasetCatalog.DATA_DIR
-        #     attrs = DatasetCatalog.DATASETS[name]
-        #     args = dict(
-        #         root=os.path.join(data_dir, attrs["img_dir"]),
-        #         ann_root=os.path.join(data_dir, attrs["ann_dir"]),
-        #     )
-        #     return dict(
-        #         factory="DukeMTMCDataset",
-        #         args=args,
-        #     )
         raise RuntimeError("Dataset not available: {}".format(name))

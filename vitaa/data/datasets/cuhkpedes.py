@@ -12,6 +12,8 @@ class CUHKPEDESDataset(data.Dataset):
     def __init__(self,
                  root,
                  ann_file,
+                 img_dir=None,
+                 seg_dir=None,
                  max_length=100,
                  max_attribute_length=25,
                  transforms=None,
@@ -24,8 +26,8 @@ class CUHKPEDESDataset(data.Dataset):
         self.crop_transforms = crop_transforms
         self.cap_transforms = cap_transforms
 
-        self.img_dir = os.path.join(self.root, 'imgs')
-        self.seg_dir = os.path.join(self.root, 'segs')
+        self.img_dir = img_dir or os.path.join(self.root, 'imgs')
+        self.seg_dir = seg_dir or os.path.join(self.root, 'segs')
 
         print('loading annotations into memory...')
         self.dataset = json.load(open(ann_file, 'r'))

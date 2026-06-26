@@ -112,9 +112,12 @@ def parse_att_json(att_list, dictionary):
 def main(args):
     splits = ['train', 'val', 'test']
     json_name = '%s.json'
-    anno_file = 'annotations/reid_raw.json'
+    if args.reid_raw:
+        anno_path = args.reid_raw
+    else:
+        anno_path = os.path.join(args.datadir, 'annotations/reid_raw.json')
     att_dir = os.path.join(args.datadir, 'text_attribute_graph')
-    json_ann = json.load(open(os.path.join(args.datadir, anno_file)))
+    json_ann = json.load(open(anno_path))
 
     # tokenization and preprocessing
     prepro_captions(json_ann)
@@ -169,11 +172,20 @@ def main(args):
 
 
 if __name__ == "__main__":
+    import sys
+    from pathlib import Path
+
+    sys.path.append(str(Path(__file__).resolve().parents[2]))
+
+    from vitaa.utils.paths import cuhk_pedes_paths, load_project_env
+
     parser = argparse.ArgumentParser()
     parser.add_argument('--datadir', default='', type=str,
-                        help='CUHK-PEDES dataset root directory')
+                        help='ViTAA data root (text_attribute_graph and output annotations)')
     parser.add_argument('--outdir', default='', type=str,
                         help='Root saving path for annotation files')
+    parser.add_argument('--reid-raw', default='', type=str,
+                        help='Path to CUHK-PEDES reid_raw.json (default: datadir/annotations/reid_raw.json)')
     # options
     parser.add_argument('--max_length', default=100, type=int,
                         help='max length of a caption, in number of words. captions longer than this get clipped.')
@@ -181,4 +193,12 @@ if __name__ == "__main__":
                         help='only words that occur more than this number of times will be put in vocab')
 
     args = parser.parse_args()
+    load_project_env()
+    paths = cuhk_pedes_paths()
+    if not args.datadir:
+        args.datadir = str(paths["vitaa_data_root"])
+    if not args.outdir:
+        args.outdir = str(paths["annotations_dir"])
+    if not args.reid_raw:
+        args.reid_raw = str(paths["reid_raw"])
     dict = main(args)

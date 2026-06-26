@@ -13,6 +13,7 @@ import torch.utils.data.distributed
 
 from vitaa.config import cfg
 from vitaa.utils.comm import synchronize, get_rank
+from vitaa.utils.paths import load_project_env
 from vitaa.utils.logger import setup_logger
 from vitaa.models.model import build_model
 from vitaa.utils.checkpoint import Checkpointer
@@ -55,6 +56,8 @@ def main():
     )
 
     args = parser.parse_args()
+
+    load_project_env()
 
     num_gpus = int(os.environ["WORLD_SIZE"]) if "WORLD_SIZE" in os.environ else 1
     distributed = num_gpus > 1
