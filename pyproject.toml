@@ -1,0 +1,31 @@
+[project]
+name = "vitaa"
+version = "0.1.0"
+description = "ViTAA: Visual-Textual Attributes Alignment in Person Search by Natural Language"
+readme = "README.md"
+requires-python = ">=3.11,<3.13"
+dependencies = [
+    "numpy>=1.26.0,<3",
+    "pillow>=10,<13",
+    "torch==2.9.1",
+    "torchvision==0.24.1",
+    "tqdm>=4.66,<5",
+    "yacs>=0.1.8",
+]
+
+[dependency-groups]
+tensorboard = [
+    "tensorboardX>=2.6,<3",
+]
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu128" }
+torchvision = { index = "pytorch-cu128" }
+
+[tool.uv]
+package = false
